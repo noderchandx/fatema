@@ -305,15 +305,13 @@ async function showVerify(token) {
   }
   box.innerHTML = `<div class="auth-card verify-ok">
     <h1 style="color:var(--ok)">✅ যাচাইকৃত শিক্ষার্থী</h1>
-    <p class="muted" style="margin-top:0">${esc(data.madrasa || '')}${data.address ? ' — ' + esc(data.address) : ''}</p>
+    <p class="muted" style="margin-top:0">${esc(data.madrasa || '')}</p>
     <div style="display:flex;gap:14px;align-items:flex-start">
-      <img class="verify-photo" src="${esc(data.photo_url || NOPHOTO)}" alt="">
       <dl class="kv" style="grid-template-columns:78px 1fr;min-width:0;margin:0">
         <dt>নাম</dt><dd>${esc(data.name)}</dd>
         <dt>আইডি</dt><dd>${bn(data.student_id)}</dd>
         <dt>শ্রেণি</dt><dd>${esc(data.class || '—')}</dd>
         <dt>রোল</dt><dd>${bn(data.roll)}</dd>
-        <dt>পিতা</dt><dd>${esc(data.father)}</dd>
         <dt>অবস্থা</dt><dd>${data.status === 'active' ? '<span class="badge ok">অধ্যয়নরত</span>' : '<span class="badge gray">সমাপ্ত</span>'}</dd>
       </dl>
     </div></div>`;
@@ -921,22 +919,14 @@ async function doPromote() {
   if (!confirm(`${bn(ids.length)} জন শিক্ষার্থীকে "${cName(PR.from)}" থেকে ${label} প্রমোশন দেবেন?`)) return;
   const btn = $('#pRun'); btn.disabled = true;
   try {
-    for (let i = 0; i < ids.length; i += 100) {
-      const chunk = ids.slice(i, i + 100);
-      const upd = grad ? { status: 'passed_out' } : { class_id: +PR.to };
-      const { error } = await sb.from('students').update(upd).in('id', chunk);
-      if (error) throw error;
-    }
-    const year = $('#pYear').value.trim();
-    const logRows = ids.map(id => ({ student_id: id, from_class: +PR.from, to_class: grad ? null : +PR.to, year }));
-    for (let i = 0; i < logRows.length; i += 200) {
-      const { error } = await sb.from('promotions').insert(logRows.slice(i, i + 200));
-      if (error) throw error;
-    }
-    if (!grad && $('#pRenum').checked) {
-      const all = await fetchAll(() => sb.from('students').select('id,roll').eq('class_id', PR.to).eq('status', 'active').order('roll').order('id'));
-      await Promise.all(all.map((s, i) => sb.from('students').update({ roll: i + 1 }).eq('id', s.id)));
-    }
+    const { error } = await sb.rpc('promote_students', {
+      p_ids: ids,
+      p_from_class: +PR.from,
+      p_to_class: grad ? null : +PR.to,
+      p_year: $('#pYear').value.trim(),
+      p_renumber: !grad && $('#pRenum').checked,
+    });
+    if (error) throw error;
     toast(`${bn(ids.length)} জনের প্রমোশন সম্পন্ন হয়েছে`);
     await pages.promotion();
   } catch (e) { throw e; } finally { btn.disabled = false; }
