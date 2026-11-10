@@ -114,8 +114,9 @@ function bindPhotoPreview(form) {
 
 /* qr */
 function verifyUrl(token) {
-  const base = CFG.SITE_URL || (location.origin + location.pathname);
-  return `${base}?verify=${token}`;
+  const configuredBase = CFG.SITE_URL || (location.origin + location.pathname);
+  const base = String(configuredBase).replace(/[?#].*$/, '').replace(/\/$/, '/') || '/';
+  return `${base}?verify=${encodeURIComponent(String(token || '').trim())}`;
 }
 function qrSvg(text) {
   const q = qrcode(0, 'M');
@@ -296,8 +297,12 @@ async function showVerify(token) {
   show('verify-screen');
   const box = $('#verify-screen');
   box.innerHTML = '<div class="auth-card"><p>যাচাই করা হচ্ছে…</p></div>';
-  const { data, error } = await sb.rpc('verify_student', { p_token: token });
-  if (error || !data) {
+  let cleanToken = String(token || '').trim();
+  try { cleanToken = decodeURIComponent(cleanToken); } catch (_) { /* malformed encoding will fail validation below */ }
+  const { data: rawData, error } = await sb.rpc('verify_student', { p_token: cleanToken });
+  const data = Array.isArray(rawData) ? rawData[0] : rawData;
+  if (error) console.error('QR verification RPC error:', error);
+  if (error || !data || !data.student_id) {
     box.innerHTML = `<div class="auth-card verify-bad"><h1 style="color:var(--danger)">❌ যাচাই ব্যর্থ</h1>
       <p>এই কিউআর কোডটি বৈধ নয় অথবা শিক্ষার্থীর তথ্য পাওয়া যায়নি।</p></div>`;
     return;
@@ -501,12 +506,14 @@ function viewStudent(id) {
   </div><hr>
   <div class="row">
     <div><label>মার্কশীট দেখুন — পরীক্ষা</label><select id="vsExam">${examOpts()}</select></div>
+    <div class="auto"><button class="btn primary" id="vsResult" ${S.exams.length ? '' : 'disabled'}>ফলাফল এন্ট্রি</button></div>
     <div class="auto"><button class="btn" id="vsMark" ${S.exams.length ? '' : 'disabled'}>মার্কশীট</button></div>
     <div class="auto"><button class="btn" id="vsCard">আইডি কার্ড প্রিন্ট</button></div>
     <div class="auto"><button class="btn primary" id="vsEdit">সম্পাদনা</button></div>
   </div>`, true);
   $('#vsEdit').onclick = () => studentForm(s.id);
   $('#vsCard').onclick = () => printHTML(`<div class="cards">${cardHTML(s, S.settings.session_year)}</div>`);
+  $('#vsResult').onclick = () => run(() => openIndividualResult(s.id, $('#vsExam').value));
   $('#vsMark').onclick = () => run(() => openMarksheetFor(s.id, +$('#vsExam').value));
 }
 
@@ -714,11 +721,11 @@ async function loadMarksGrid() {
     const up = [], del = [];
     let bad = null;
     $$('input[data-sid]', grid).forEach(inp => {
-      const sid = +inp.dataset.sid, v = inp.value.trim();
+    const sid = inp.dataset.sid, v = inp.value.trim();
       if (v === '') { if (have.has(sid)) del.push(sid); return; }
       const n = Number(v);
       if (isNaN(n) || n < 0 || n > full) { bad = bad || inp; return; }
-      up.push({ student_id: sid, exam_id: +ME.exam, subject_id: +ME.sub, marks: n });
+      up.push({ student_id: sid, exam_id: ME.exam, subject_id: ME.sub, marks: n });
     });
     if (bad) { bad.focus(); return toast(`নম্বর ০ থেকে ${bn(full)} এর মধ্যে হতে হবে`, 'err'); }
     if (up.length) { const { error } = await sb.from('results').upsert(up, { onConflict: 'student_id,exam_id,subject_id' }); if (error) throw error; }
@@ -769,7 +776,7 @@ async function openMarksheetFor(studentId, examId) {
 const RF = { exam: '', cls: '' };
 let RS = null;
 pages.results = async () => {
-  if (!S.exams.length) { V().innerHTML = '<div class="empty">কোনো পরীক্ষা নেই। আগে সেটিংস থেকে পরীক্ষা যোগ করুন।</div>'; return; }
+  if (!S.exams.length) { V().innerHTML = '<h2>সব ফলাফল ও মার্কশীট</h2><div class="card empty">ফলাফল এন্ট্রি করতে আগে সেটিংস থেকে অন্তত একটি পরীক্ষা যোগ করুন।<br><a class="btn primary" href="#/settings" style="margin-top:12px">সেটিংসে পরীক্ষা যোগ করুন</a></div>'; return; }
   S.students = await fetchAll(() => sb.from('students').select('*').order('student_code').order('id'));
   if (!RF.exam || !S.exams.some(e => e.id == RF.exam)) RF.exam = (S.exams.find(e => e.is_final) || S.exams[0]).id;
   if (!RF.cls || !S.classes.some(c => c.id == RF.cls)) RF.cls = S.classes[0]?.id;
@@ -786,7 +793,7 @@ pages.results = async () => {
   $('#irEdit').onclick = () => {
     const sid = $('#irStudent').value;
     if (!sid) return toast('আগে একজন শিক্ষার্থী নির্বাচন করুন', 'err');
-    run(() => openIndividualResult(+sid, +$('#irExam').value));
+    run(() => openIndividualResult(sid, $('#irExam').value));
   };
   const fillResultSubs = () => {
     const subs = S.subjects.filter(s => s.class_id == ME.cls);
