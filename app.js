@@ -514,7 +514,7 @@ function viewStudent(id) {
   $('#vsEdit').onclick = () => studentForm(s.id);
   $('#vsCard').onclick = () => printHTML(`<div class="cards">${cardHTML(s, S.settings.session_year)}</div>`);
   $('#vsResult').onclick = () => run(() => openIndividualResult(s.id, $('#vsExam').value));
-  $('#vsMark').onclick = () => run(() => openMarksheetFor(s.id, +$('#vsExam').value));
+  $('#vsMark').onclick = () => run(() => openMarksheetFor(s.id, $('#vsExam').value));
 }
 
 /* ---------- Teachers ---------- */
