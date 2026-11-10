@@ -13,6 +13,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const V = () => $('#view');
+const studentCode = s => s?.student_code || s?.id || '';
 const NOPHOTO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 96"><rect width="80" height="96" fill="#eef2f0"/><circle cx="40" cy="36" r="16" fill="#b8c7c1"/><path d="M8 96c0-22 14-34 32-34s32 12 32 34z" fill="#b8c7c1"/></svg>');
 
@@ -177,7 +178,7 @@ async function computeClass(examId, classId) {
   if (!subs.length) return { subs, rows: [], fullTotal: 0 };
   const ids = subs.map(s => s.id);
   const data = await fetchAll(() => sb.from('results')
-    .select('id,student_id,subject_id,marks,students(id,name,roll,father_name,mother_name,dob,gender,photo_url,birth_reg_no,verify_token)')
+    .select('id,student_id,subject_id,marks,students(id,student_code,name,roll,father_name,mother_name,dob,gender,photo_url,birth_reg_no,verify_token)')
     .eq('exam_id', examId).in('subject_id', ids).order('id'));
   const map = new Map();
   for (const r of data) {
@@ -219,13 +220,10 @@ const NAV = [
   ['dashboard', '📊', 'ড্যাশবোর্ড'],
   ['students', '🎓', 'শিক্ষার্থী'],
   ['teachers', '👨‍🏫', 'শিক্ষক'],
-  ['subjects', '📚', 'বিষয়'],
-  ['exams', '📝', 'পরীক্ষা ও নম্বর এন্ট্রি'],
-  ['results', '🏅', 'ফলাফল ও মার্কশীট'],
-  ['summary', '🏫', 'মাদ্রাসার সব ফলাফল'],
+  ['settings', '⚙️', 'সেটিংস: শ্রেণি, বিষয় ও পরীক্ষা'],
+  ['results', '🏅', 'সব ফলাফল ও মার্কশীট'],
   ['promotion', '⬆️', 'প্রমোশন'],
   ['idcards', '🪪', 'আইডি কার্ড'],
-  ['settings', '⚙️', 'সেটিংস'],
 ];
 
 function show(id) {
@@ -344,7 +342,8 @@ pages.dashboard = async () => {
       return `<tr><td>${esc(c.name)}</td><td class="c">${bn(l.filter(s => s.gender === 'male').length)}</td><td class="c">${bn(l.filter(s => s.gender === 'female').length)}</td><td class="c"><b>${bn(l.length)}</b></td></tr>`;
     }).join('')}</tbody></table></div></div>
   <div class="row"><div class="auto"><a class="btn primary" href="#/students">+ শিক্ষার্থী যোগ করুন</a></div>
-  <div class="auto"><a class="btn" href="#/exams">নম্বর এন্ট্রি</a></div>
+  <div class="auto"><a class="btn" href="#/results">ফলাফল ও নম্বর</a></div>
+  <div class="auto"><a class="btn" href="#/settings">শ্রেণি, বিষয় ও পরীক্ষা</a></div>
   <div class="auto"><a class="btn" href="#/idcards">আইডি কার্ড</a></div></div>`;
 };
 
@@ -360,7 +359,7 @@ function studentRows() {
   const q = SF.q.trim().toLowerCase();
   return S.students
     .filter(s => (SF.status === 'all' || s.status === SF.status) && (SF.cls === 'all' || s.class_id == SF.cls) &&
-      (!q || [s.name, s.id, s.roll, s.father_name, s.mother_name].join(' ').toLowerCase().includes(q)))
+      (!q || [s.name, studentCode(s), s.id, s.roll, s.father_name, s.mother_name].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => (cOrd(a.class_id) - cOrd(b.class_id)) || (a.roll - b.roll));
 }
 function studentsTable() {
@@ -369,7 +368,7 @@ function studentsTable() {
   return `<div class="tbl-wrap"><table class="data"><thead><tr><th>ছবি</th><th>আইডি</th><th>নাম</th><th class="c">রোল</th><th>শ্রেণি</th><th>পিতার নাম</th><th></th></tr></thead><tbody>
   ${list.map(s => `<tr>
     <td><img class="thumb" src="${esc(s.photo_url || NOPHOTO)}" alt=""></td>
-    <td>${bn(s.id)}</td><td><b>${esc(s.name)}</b>${s.status !== 'active' ? ' <span class="badge gray">সমাপ্ত</span>' : ''}</td>
+    <td>${bn(studentCode(s))}</td><td><b>${esc(s.name)}</b>${s.status !== 'active' ? ' <span class="badge gray">সমাপ্ত</span>' : ''}</td>
     <td class="c">${bn(s.roll)}</td><td>${esc(cName(s.class_id))}</td><td>${esc(s.father_name)}</td>
     <td style="white-space:nowrap"><button class="btn sm" data-act="view" data-id="${s.id}">দেখুন</button>
       <button class="btn sm" data-act="edit" data-id="${s.id}">সম্পাদনা</button>
@@ -400,7 +399,7 @@ function drawStudents() {
     if (act === 'edit') studentForm(d.id);
     if (act === 'del') {
       const s = S.students.find(x => x.id == d.id);
-      if (!confirm(`"${s.name}" (আইডি ${bn(s.id)}) কে মুছে ফেলবেন? এর সব ফলাফলও মুছে যাবে।`)) return;
+      if (!confirm(`"${s.name}" (আইডি ${bn(studentCode(s))}) কে মুছে ফেলবেন? এর সব ফলাফলও মুছে যাবে।`)) return;
       await run(async () => {
         const { error } = await sb.from('students').delete().eq('id', s.id);
         if (error) throw error;
@@ -415,8 +414,8 @@ function studentFormHTML(s, defCls) {
   return `<form id="stuForm" class="grid2">
   <div class="full photo-field"><img class="ph-prev" src="${esc(s?.photo_url || NOPHOTO)}" alt="">
     <div style="flex:1"><label>ছবি</label><input type="file" name="photo" accept="image/*"><small class="muted">ছবি স্বয়ংক্রিয়ভাবে ছোট করে আপলোড হবে</small></div></div>
-  <div><label>শিক্ষার্থী আইডি</label><input value="${s ? bn(s.id) : 'স্বয়ংক্রিয় (১০০০ থেকে)'}" disabled></div>
-  <div><label>শ্রেণি *</label><select name="class_id" required>${classOpts(s?.class_id || defCls)}</select></div>
+  <div><label>শিক্ষার্থী আইডি</label><input value="${s ? bn(studentCode(s)) : 'স্বয়ংক্রিয় ৮ ডিজিট'}" disabled></div>
+  <div><label>শ্রেণি *</label><select name="class_id" required><option value="">শ্রেণি নির্বাচন করুন</option>${classOpts(s?.class_id || defCls)}</select></div>
   <div><label>নাম *</label><input name="name" required value="${esc(s?.name)}"></div>
   <div><label>রোল *</label><input name="roll" type="number" min="1" required value="${esc(s?.roll)}"></div>
   <div><label>পিতার নাম *</label><input name="father_name" required value="${esc(s?.father_name)}"></div>
@@ -448,6 +447,9 @@ function studentForm(id) {
     e.preventDefault();
     const btn = f.querySelector('[type=submit]'); btn.disabled = true;
     await run(async () => {
+      if (!f.class_id.value || !S.classes.some(c => String(c.id) === String(f.class_id.value))) {
+        throw new Error('শিক্ষার্থীর শ্রেণি নির্বাচন করুন');
+      }
       let photo = s?.photo_url || null;
       if (f.photo.files[0]) photo = await uploadPhoto(f.photo.files[0], 'students');
       const row = {
@@ -467,7 +469,7 @@ function studentForm(id) {
         const { data, error } = await sb.from('students').insert(row).select().single();
         if (error) throw error;
         S.students.push(data);
-        toast(`শিক্ষার্থী যোগ হয়েছে — আইডি: ${bn(data.id)}`);
+        toast(`শিক্ষার্থী যোগ হয়েছে — আইডি: ${bn(studentCode(data))}`);
       }
       closeModal(); drawStudents();
     });
@@ -482,7 +484,7 @@ function viewStudent(id) {
   <div class="detail">
     <div><img class="ph" src="${esc(s.photo_url || NOPHOTO)}" alt=""><div class="qr-box" style="margin-top:10px">${qrSvg(url)}</div></div>
     <dl class="kv">
-      <dt>আইডি</dt><dd>${bn(s.id)}</dd>
+      <dt>আইডি</dt><dd>${bn(studentCode(s))}</dd>
       <dt>নাম</dt><dd>${esc(s.name)}</dd>
       <dt>শ্রেণি</dt><dd>${esc(cName(s.class_id))}</dd>
       <dt>রোল</dt><dd>${bn(s.roll)}</dd>
@@ -733,7 +735,7 @@ function marksheetHTML(row, subs, exam, clsName) {
     <p><b>${esc(exam.name)} — ${bn(exam.year)}</b></p></div>
   <div class="ms-info"><table>
     <tr><td>নাম</td><td>: <b>${esc(st.name)}</b></td></tr>
-    <tr><td>আইডি</td><td>: ${bn(st.id)}</td></tr>
+    <tr><td>আইডি</td><td>: ${bn(studentCode(st))}</td></tr>
     <tr><td>শ্রেণি</td><td>: ${esc(clsName)} &nbsp; রোল: ${bn(st.roll)}</td></tr>
     <tr><td>পিতার নাম</td><td>: ${esc(st.father_name)}</td></tr>
     <tr><td>মাতার নাম</td><td>: ${esc(st.mother_name)}</td></tr>
@@ -765,18 +767,74 @@ async function openMarksheetFor(studentId, examId) {
 const RF = { exam: '', cls: '' };
 let RS = null;
 pages.results = async () => {
-  if (!S.exams.length) { V().innerHTML = '<div class="empty">কোনো পরীক্ষা নেই। আগে "পরীক্ষা ও নম্বর এন্ট্রি" পেজ থেকে পরীক্ষা যোগ করুন।</div>'; return; }
+  if (!S.exams.length) { V().innerHTML = '<div class="empty">কোনো পরীক্ষা নেই। আগে সেটিংস থেকে পরীক্ষা যোগ করুন।</div>'; return; }
+  S.students = await fetchAll(() => sb.from('students').select('*').order('student_code').order('id'));
   if (!RF.exam || !S.exams.some(e => e.id == RF.exam)) RF.exam = (S.exams.find(e => e.is_final) || S.exams[0]).id;
   if (!RF.cls || !S.classes.some(c => c.id == RF.cls)) RF.cls = S.classes[0]?.id;
-  V().innerHTML = `<h2>ফলাফল ও মার্কশীট</h2>
+  V().innerHTML = `<h2>সব ফলাফল ও মার্কশীট</h2>
+  <div class="card"><h3>একজন শিক্ষার্থীর ফলাফল যোগ / সম্পাদনা</h3><div class="row">
+    <div><label>শিক্ষার্থী</label><select id="irStudent"><option value="">শিক্ষার্থী নির্বাচন করুন</option>${S.students.filter(s => s.status === 'active').map(s => `<option value="${s.id}">${bn(studentCode(s))} — ${esc(s.name)} (${esc(cName(s.class_id))})</option>`).join('')}</select></div>
+    <div><label>পরীক্ষা</label><select id="irExam">${examOpts(RF.exam)}</select></div>
+    <div class="auto"><button class="btn primary" id="irEdit">ফলাফল খুলুন</button></div></div>
+    <p class="muted"><small>একজন শিক্ষার্থীর প্রতিটি বিষয়ের নম্বর আলাদাভাবে লিখে সংরক্ষণ করা যাবে।</small></p></div>
+  <div class="card"><h3>বিষয়ভিত্তিক দ্রুত নম্বর এন্ট্রি</h3><div class="row"><div><label>পরীক্ষা</label><select id="meExam">${examOpts(RF.exam)}</select></div><div><label>শ্রেণি</label><select id="meCls">${classOpts(RF.cls)}</select></div><div><label>বিষয়</label><select id="meSub"></select></div><div class="auto"><button class="btn primary" id="meLoad">নম্বর এন্ট্রি খুলুন</button></div></div><div id="meGrid" style="margin-top:14px"></div></div>
   <div class="card"><div class="row"><div><label>পরীক্ষা (★ = ফাইনাল)</label><select id="rExam">${examOpts(RF.exam)}</select></div>
   <div><label>শ্রেণি</label><select id="rCls">${classOpts(RF.cls)}</select></div>
-  <div class="auto"><button class="btn primary" id="rGo">ফলাফল দেখুন</button></div></div></div><div id="rOut"></div>`;
+  <div class="auto"><button class="btn primary" id="rGo">শ্রেণির ফলাফল দেখুন</button></div></div></div><div id="rOut"></div>`;
+  $('#irEdit').onclick = () => {
+    const sid = $('#irStudent').value;
+    if (!sid) return toast('আগে একজন শিক্ষার্থী নির্বাচন করুন', 'err');
+    run(() => openIndividualResult(+sid, +$('#irExam').value));
+  };
+  const fillResultSubs = () => {
+    const subs = S.subjects.filter(s => s.class_id == ME.cls);
+    if (!subs.some(s => s.id == ME.sub)) ME.sub = subs[0]?.id || '';
+    $('#meSub').innerHTML = subs.length ? subs.map(s => `<option value="${s.id}" ${s.id == ME.sub ? 'selected' : ''}>${esc(s.name)} (${fm(Number(s.full_marks))})</option>`).join('') : '<option value="">— বিষয় নেই —</option>';
+  };
+  ME.exam = RF.exam; ME.cls = RF.cls; fillResultSubs();
+  $('#meExam').onchange = e => { ME.exam = e.target.value; };
+  $('#meCls').onchange = e => { ME.cls = e.target.value; fillResultSubs(); };
+  $('#meSub').onchange = e => { ME.sub = e.target.value; };
+  $('#meLoad').onclick = () => run(loadMarksGrid);
   $('#rExam').onchange = e => (RF.exam = e.target.value);
   $('#rCls').onchange = e => (RF.cls = e.target.value);
   $('#rGo').onclick = () => run(showClassResults);
   await run(showClassResults);
 };
+
+async function openIndividualResult(studentId, examId) {
+  const st = S.students.find(s => s.id == studentId);
+  if (!st) return toast('শিক্ষার্থী পাওয়া যায়নি', 'err');
+  const subs = S.subjects.filter(s => s.class_id == st.class_id);
+  if (!subs.length) return toast('এই শ্রেণিতে কোনো বিষয় নেই। আগে সেটিংস থেকে বিষয় যোগ করুন।', 'err');
+  const { data, error } = await sb.from('results').select('subject_id,marks').eq('student_id', studentId).eq('exam_id', examId);
+  if (error) throw error;
+  const have = new Map((data || []).map(r => [r.subject_id, Number(r.marks)]));
+  const exam = S.exams.find(e => e.id == examId);
+  openModal(`ফলাফল — ${st.name}`, `<p class="muted">আইডি: ${bn(studentCode(st))} · শ্রেণি: ${esc(cName(st.class_id))} · পরীক্ষা: ${esc(exam?.name || '')}</p>
+    <form id="individualResultForm"><div class="tbl-wrap"><table class="data"><thead><tr><th>বিষয়</th><th class="c">পূর্ণমান</th><th style="width:180px">প্রাপ্ত নম্বর</th></tr></thead><tbody>
+    ${subs.map(s => `<tr><td>${esc(s.name)}</td><td class="c">${fm(Number(s.full_marks))}</td><td><input type="number" min="0" max="${Number(s.full_marks)}" step="any" data-subject="${s.id}" value="${have.has(s.id) ? have.get(s.id) : ''}" placeholder="ফাঁকা = মুছুন"></td></tr>`).join('')}
+    </tbody></table></div><div class="actions" style="margin-top:12px"><button class="btn" type="button" data-close>বাতিল</button><button class="btn primary" type="submit">ফলাফল সংরক্ষণ</button></div></form>`, true);
+  $('#individualResultForm').onsubmit = async e => {
+    e.preventDefault();
+    await run(async () => {
+      const up = [], del = [];
+      for (const input of $$('input[data-subject]', e.target)) {
+        const value = input.value.trim();
+        const subject = subs.find(s => s.id == input.dataset.subject);
+        if (!value) { if (have.has(subject.id)) del.push(subject.id); continue; }
+        const marks = Number(value);
+        if (!Number.isFinite(marks) || marks < 0 || marks > Number(subject.full_marks)) {
+          input.focus(); throw new Error(`"${subject.name}" বিষয়ে ০ থেকে ${fm(Number(subject.full_marks))} এর মধ্যে নম্বর দিন`);
+        }
+        up.push({ student_id: studentId, exam_id: examId, subject_id: subject.id, marks });
+      }
+      if (up.length) { const r = await sb.from('results').upsert(up, { onConflict: 'student_id,exam_id,subject_id' }); if (r.error) throw r.error; }
+      if (del.length) { const r = await sb.from('results').delete().eq('student_id', studentId).eq('exam_id', examId).in('subject_id', del); if (r.error) throw r.error; }
+      closeModal(); toast('শিক্ষার্থীর ফলাফল সংরক্ষণ হয়েছে');
+    });
+  };
+}
 
 async function showClassResults() {
   const exam = S.exams.find(e => e.id == RF.exam);
@@ -937,7 +995,7 @@ function cardHTML(s, year) {
   const M = S.settings, url = verifyUrl(s.verify_token);
   return `<div class="idcard"><div class="ic-head"><b>${esc(M.madrasa_name)}</b><small>${esc(M.madrasa_address || '')}</small><span>শিক্ষার্থী পরিচয়পত্র</span></div>
   <div class="ic-body"><img class="ic-photo" src="${esc(s.photo_url || NOPHOTO)}" alt="">
-    <div class="ic-info"><div class="ic-name">${esc(s.name)}</div><div>আইডি: <b>${bn(s.id)}</b></div>
+    <div class="ic-info"><div class="ic-name">${esc(s.name)}</div><div>আইডি: <b>${bn(studentCode(s))}</b></div>
     <div>শ্রেণি: ${esc(cName(s.class_id))} · রোল: ${bn(s.roll)}</div><div>পিতা: ${esc(s.father_name)}</div><div>জন্ম তারিখ: ${fmtDate(s.dob)}</div></div>
     <div class="ic-qr">${qrSvg(url)}</div></div>
   <div class="ic-foot">কিউআর স্ক্যান করে যাচাই করুন · শিক্ষাবর্ষ ${bn(year || '')}</div></div>`;
@@ -972,7 +1030,7 @@ async function loadCards() {
 function drawPick(reset) {
   const q = ($('#icQ')?.value || '').trim().toLowerCase();
   const keep = new Set($$('#icPick input:checked').map(i => +i.dataset.id));
-  const list = ICS.filter(s => !q || [s.name, s.id, s.roll].join(' ').toLowerCase().includes(q));
+  const list = ICS.filter(s => !q || [s.name, studentCode(s), s.id, s.roll].join(' ').toLowerCase().includes(q));
   $('#icPick').innerHTML = list.length ? `<label class="inline"><input type="checkbox" id="icAll" ${reset || !keep.size ? 'checked' : ''}> সবাই (${bn(list.length)} জন)</label>
   <div style="max-height:180px;overflow:auto;margin-top:6px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 10px">
   ${list.map(s => `<label class="inline"><input type="checkbox" data-id="${s.id}" ${reset || !keep.size || keep.has(s.id) ? 'checked' : ''}> ${bn(s.roll)}. ${esc(s.name)}</label>`).join('')}</div>` : '<div class="empty">কোনো শিক্ষার্থী নেই</div>';
@@ -1006,7 +1064,22 @@ pages.settings = async () => {
     <td style="white-space:nowrap"><button class="btn sm" data-act="save" data-id="${c.id}">সংরক্ষণ</button> <button class="btn sm danger" data-act="del" data-id="${c.id}">মুছুন</button></td></tr>`).join('')}</tbody></table></div>
   <hr><form id="clsForm" class="row"><div><label>নতুন শ্রেণির নাম</label><input name="name" required placeholder="যেমন: আলিম প্রথম বর্ষ"></div>
   <div class="auto"><button class="btn primary" type="submit">+ শ্রেণি যোগ করুন</button></div></form>
-  <p class="muted"><small>"ক্রম" সংখ্যা অনুযায়ী শ্রেণি সাজানো হয় এবং প্রমোশনে পরবর্তী শ্রেণি এই ক্রম থেকেই ঠিক হয়। শিক্ষার্থী আছে এমন শ্রেণি মোছা যাবে না।</small></p></div>`;
+  <p class="muted"><small>"ক্রম" সংখ্যা অনুযায়ী শ্রেণি সাজানো হয় এবং প্রমোশনে পরবর্তী শ্রেণি এই ক্রম থেকেই ঠিক হয়। শিক্ষার্থী আছে এমন শ্রেণি মোছা যাবে না।</small></p></div>
+  <div class="card"><h3>বিষয়সমূহ</h3><div class="row"><div><label>শ্রেণি</label><select id="setSubClass">${classOpts(S.classes[0]?.id)}</select></div></div>
+  <div id="setSubjectsList" style="margin-top:10px"></div><hr><form id="setSubForm" class="row"><div><label>বিষয়ের নাম</label><input name="name" required placeholder="যেমন: কুরআন মাজিদ"></div><div style="max-width:140px"><label>পূর্ণমান</label><input name="full" type="number" min="1" step="any" value="100" required></div><div class="auto"><button class="btn primary" type="submit">+ বিষয় যোগ করুন</button></div></form></div>
+  <div class="card"><h3>পরীক্ষার নাম</h3><div id="setExamsList"></div><hr><form id="setExamForm" class="row"><div><label>পরীক্ষার নাম</label><input name="name" required placeholder="যেমন: বার্ষিক পরীক্ষা"></div><div style="max-width:130px"><label>সাল</label><input name="year" type="number" required value="${esc(M.session_year || new Date().getFullYear())}"></div><div class="auto"><label class="inline"><input type="checkbox" name="final"> ফাইনাল পরীক্ষা</label></div><div class="auto"><button class="btn primary" type="submit">+ পরীক্ষা যোগ করুন</button></div></form></div>`;
+  const renderSetSubjects = () => {
+    const cls = $('#setSubClass').value;
+    const list = S.subjects.filter(s => s.class_id == cls);
+    $('#setSubjectsList').innerHTML = list.length ? `<div class="tbl-wrap"><table class="data"><thead><tr><th>বিষয়</th><th class="c">পূর্ণমান</th><th></th></tr></thead><tbody>${list.map(s => `<tr><td>${esc(s.name)}</td><td class="c">${fm(Number(s.full_marks))}</td><td><button class="btn sm danger" data-act="del-sub" data-id="${s.id}">মুছুন</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">এই শ্রেণিতে কোনো বিষয় নেই</div>';
+  };
+  const renderSetExams = () => {
+    $('#setExamsList').innerHTML = S.exams.length ? `<div class="tbl-wrap"><table class="data"><thead><tr><th>পরীক্ষা</th><th>সাল</th><th>ধরন</th><th></th></tr></thead><tbody>${S.exams.map(e => `<tr><td>${esc(e.name)}</td><td>${bn(e.year)}</td><td>${e.is_final ? 'ফাইনাল' : 'সাধারণ'}</td><td><button class="btn sm danger" data-act="del-exam" data-id="${e.id}">মুছুন</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">কোনো পরীক্ষা নেই</div>';
+  };
+  renderSetSubjects(); renderSetExams();
+  $('#setSubClass').onchange = renderSetSubjects;
+  $('#setSubForm').onsubmit = async e => { e.preventDefault(); await run(async () => { const f = e.target; const { error } = await sb.from('subjects').insert({ class_id: +$('#setSubClass').value, name: f.name.value.trim(), full_marks: +f.full.value, sort_order: S.subjects.filter(s => s.class_id == $('#setSubClass').value).length + 1 }); if (error) throw error.code === '23505' ? new Error('এই নামে বিষয় আগে থেকেই আছে') : error; await loadSubjects(); f.reset(); f.full.value = 100; renderSetSubjects(); toast('বিষয় যোগ হয়েছে'); }); };
+  $('#setExamForm').onsubmit = async e => { e.preventDefault(); await run(async () => { const f = e.target; const { error } = await sb.from('exams').insert({ name: f.name.value.trim(), year: +f.year.value, is_final: f.final.checked }); if (error) throw error; await loadExams(); f.reset(); f.year.value = S.settings.session_year || new Date().getFullYear(); renderSetExams(); toast('পরীক্ষা যোগ হয়েছে'); }); };
   $('#setForm').onsubmit = async e => {
     e.preventDefault();
     const f = e.target;
@@ -1029,6 +1102,18 @@ pages.settings = async () => {
     });
   };
   delegate(async (act, d) => {
+    if (act === 'del-sub') {
+      const subject = S.subjects.find(x => x.id == d.id);
+      if (!subject || !confirm(`বিষয় "${subject.name}" মুছবেন? এর সব নম্বরও মুছে যাবে।`)) return;
+      await run(async () => { const { error } = await sb.from('subjects').delete().eq('id', subject.id); if (error) throw error; await loadSubjects(); renderSetSubjects(); toast('বিষয় মুছে ফেলা হয়েছে'); });
+      return;
+    }
+    if (act === 'del-exam') {
+      const exam = S.exams.find(x => x.id == d.id);
+      if (!exam || !confirm(`পরীক্ষা "${exam.name}" মুছবেন? এর সব নম্বরও মুছে যাবে।`)) return;
+      await run(async () => { const { error } = await sb.from('exams').delete().eq('id', exam.id); if (error) throw error; await loadExams(); renderSetExams(); toast('পরীক্ষা মুছে ফেলা হয়েছে'); });
+      return;
+    }
     if (act === 'save') {
       await run(async () => {
         const name = $(`[data-name="${d.id}"]`).value.trim(), ord = +$(`[data-order="${d.id}"]`).value;
