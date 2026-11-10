@@ -107,6 +107,40 @@ create table if not exists public.results (
 create index if not exists results_exam_subject_idx on public.results(exam_id, subject_id);
 create index if not exists results_student_idx on public.results(student_id);
 
+-- ---------- ডেটা অখণ্ডতা ----------
+create unique index if not exists students_active_class_roll_uidx
+  on public.students(class_id, roll) where status = 'active';
+
+create or replace function public.validate_result()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  student_class bigint;
+  subject_class bigint;
+  max_marks numeric;
+begin
+  select class_id into student_class from public.students where id = new.student_id;
+  select class_id, full_marks into subject_class, max_marks from public.subjects where id = new.subject_id;
+  if student_class is null or subject_class is null then
+    raise exception 'শিক্ষার্থী বা বিষয় পাওয়া যায়নি';
+  end if;
+  if student_class <> subject_class then
+    raise exception 'শিক্ষার্থী ও বিষয়ের শ্রেণি মিলছে না';
+  end if;
+  if new.marks < 0 or new.marks > max_marks then
+    raise exception 'নম্বর ০ থেকে পূর্ণমানের মধ্যে হতে হবে';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists results_validate_trigger on public.results;
+create trigger results_validate_trigger
+before insert or update on public.results
+for each row execute function public.validate_result();
+
 -- ---------- প্রমোশন লগ ----------
 create table if not exists public.promotions (
   id         bigint generated always as identity primary key,
@@ -173,12 +207,9 @@ as $$
     'student_id', s.id,
     'name',       s.name,
     'roll',       s.roll,
-    'father',     s.father_name,
     'class',      c.name,
-    'photo_url',  s.photo_url,
     'status',     s.status,
-    'madrasa',    (select value from public.settings where key = 'madrasa_name'),
-    'address',    (select value from public.settings where key = 'madrasa_address')
+    'madrasa',    (select value from public.settings where key = 'madrasa_name')
   )
   from public.students s
   left join public.classes c on c.id = s.class_id
@@ -187,3 +218,52 @@ $$;
 
 revoke all on function public.verify_student(uuid) from public;
 grant execute on function public.verify_student(uuid) to anon, authenticated;
+
+-- ---------- atomic promotion ----------
+create or replace function public.promote_students(
+  p_ids bigint[],
+  p_from_class bigint,
+  p_to_class bigint,
+  p_year text,
+  p_renumber boolean default false
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  changed integer;
+begin
+  if p_ids is null or cardinality(p_ids) = 0 then
+    raise exception 'কোনো শিক্ষার্থী নির্বাচন করা হয়নি';
+  end if;
+  if p_to_class is not null and not exists (select 1 from public.classes where id = p_to_class) then
+    raise exception 'গন্তব্য শ্রেণি পাওয়া যায়নি';
+  end if;
+  if p_to_class is null then
+    update public.students set status = 'passed_out'
+      where id = any(p_ids) and class_id = p_from_class and status = 'active';
+  else
+    update public.students set class_id = p_to_class
+      where id = any(p_ids) and class_id = p_from_class and status = 'active';
+  end if;
+  get diagnostics changed = row_count;
+  if changed <> cardinality(p_ids) then
+    raise exception 'নির্বাচিত শিক্ষার্থীদের মধ্যে কিছু শিক্ষার্থী সক্রিয় নয় বা ভুল শ্রেণিতে আছে';
+  end if;
+  insert into public.promotions(student_id, from_class, to_class, year)
+    select id, p_from_class, p_to_class, p_year from unnest(p_ids) as x(id);
+  if p_to_class is not null and p_renumber then
+    with ordered as (
+      select id, row_number() over (order by roll, id)::int as new_roll
+      from public.students where class_id = p_to_class and status = 'active'
+    )
+    update public.students s set roll = ordered.new_roll
+      from ordered where s.id = ordered.id;
+  end if;
+  return changed;
+end;
+$$;
+revoke all on function public.promote_students(bigint[], bigint, bigint, text, boolean) from public;
+grant execute on function public.promote_students(bigint[], bigint, bigint, text, boolean) to authenticated;
