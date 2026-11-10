@@ -13,7 +13,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const V = () => $('#view');
-const studentCode = s => s?.student_code || s?.id || '';
+// ব্যবহারকারীর কাছে কখনো Supabase-এর internal UUID দেখানো হবে না।
+const studentCode = s => s?.student_code || '—';
 const NOPHOTO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 96"><rect width="80" height="96" fill="#eef2f0"/><circle cx="40" cy="36" r="16" fill="#b8c7c1"/><path d="M8 96c0-22 14-34 32-34s32 12 32 34z" fill="#b8c7c1"/></svg>');
 
@@ -455,7 +456,7 @@ function studentForm(id) {
       const row = {
         name: f.name.value.trim(), roll: +f.roll.value, father_name: f.father_name.value.trim(),
         mother_name: f.mother_name.value.trim(), birth_reg_no: f.birth_reg_no.value.trim() || null,
-        dob: f.dob.value || null, gender: f.gender.value, class_id: +f.class_id.value, photo_url: photo,
+        dob: f.dob.value || null, gender: f.gender.value, class_id: f.class_id.value, photo_url: photo,
       };
       if (s) row.status = f.status.value;
       const dup = S.students.some(x => x.id != s?.id && x.class_id == row.class_id && x.roll == row.roll && x.status === 'active');
@@ -468,6 +469,7 @@ function studentForm(id) {
       } else {
         const { data, error } = await sb.from('students').insert(row).select().single();
         if (error) throw error;
+        if (!data?.class_id) throw new Error('শিক্ষার্থীর শ্রেণি ডেটাবেসে সংরক্ষণ হয়নি');
         S.students.push(data);
         toast(`শিক্ষার্থী যোগ হয়েছে — আইডি: ${bn(studentCode(data))}`);
       }
@@ -1078,7 +1080,7 @@ pages.settings = async () => {
   };
   renderSetSubjects(); renderSetExams();
   $('#setSubClass').onchange = renderSetSubjects;
-  $('#setSubForm').onsubmit = async e => { e.preventDefault(); await run(async () => { const f = e.target; const { error } = await sb.from('subjects').insert({ class_id: +$('#setSubClass').value, name: f.name.value.trim(), full_marks: +f.full.value, sort_order: S.subjects.filter(s => s.class_id == $('#setSubClass').value).length + 1 }); if (error) throw error.code === '23505' ? new Error('এই নামে বিষয় আগে থেকেই আছে') : error; await loadSubjects(); f.reset(); f.full.value = 100; renderSetSubjects(); toast('বিষয় যোগ হয়েছে'); }); };
+  $('#setSubForm').onsubmit = async e => { e.preventDefault(); await run(async () => { const f = e.target; const classId = $('#setSubClass').value; if (!classId) throw new Error('বিষয় যোগ করার আগে শ্রেণি নির্বাচন করুন'); const { error } = await sb.from('subjects').insert({ class_id: classId, name: f.name.value.trim(), full_marks: +f.full.value, sort_order: S.subjects.filter(s => s.class_id == classId).length + 1 }); if (error) throw error.code === '23505' ? new Error('এই নামে বিষয় আগে থেকেই আছে') : error; await loadSubjects(); f.reset(); f.full.value = 100; renderSetSubjects(); toast('বিষয় যোগ হয়েছে'); }); };
   $('#setExamForm').onsubmit = async e => { e.preventDefault(); await run(async () => { const f = e.target; const { error } = await sb.from('exams').insert({ name: f.name.value.trim(), year: +f.year.value, is_final: f.final.checked }); if (error) throw error; await loadExams(); f.reset(); f.year.value = S.settings.session_year || new Date().getFullYear(); renderSetExams(); toast('পরীক্ষা যোগ হয়েছে'); }); };
   $('#setForm').onsubmit = async e => {
     e.preventDefault();
