@@ -1,6 +1,6 @@
 // Supabase Dashboard → Project Settings → API থেকে এই দুটি মান কপি করুন
 window.APP_CONFIG = {
-  SUPABASE_URL: 'https://emikoeobjrahhxgumopl.supabase.co/rest/v1/',
+  SUPABASE_URL: 'https://emikoeobjrahhxgumopl.supabase.co/',
   SUPABASE_ANON_KEY: 'sb_publishable_su4dU_RKZV7m1s3ZJhjZjA_wiTfBUR7',
 
   // ডিপ্লয় করার পর সাইটের পূর্ণ ঠিকানা দিন (যেমন https://mymadrasa.netlify.app/)
